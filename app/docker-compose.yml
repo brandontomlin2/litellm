@@ -1,0 +1,62 @@
+services:
+  litellm:
+    build:
+      context: ..
+      args:
+        target: runtime
+    image: ghcr.io/berriai/litellm:main-stable
+    volumes:
+      - ./config/proxy.config.yaml:/app/config.yaml:ro
+    command:
+      - "--config=/app/config.yaml"
+    ports:
+      - "4000:4000"
+    environment:
+      STORE_MODEL_IN_DB: "True"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 http://localhost:4000/health/liveliness || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: postgres:16
+    restart: always
+    container_name: litellm_db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB} -U ${POSTGRES_USER}"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - prometheus_data:/prometheus
+      - ../prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    restart: always
+
+volumes:
+  prometheus_data:
+    driver: local
+  postgres_data:
+    name: litellm_postgres_data
